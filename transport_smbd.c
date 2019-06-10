@@ -1255,8 +1255,13 @@ static int smbd_accept_client(struct smbd_transport *t)
 		t->cm_id->device->attrs.max_qp_rd_atom :
 		SMBD_CM_RESPONDER_RESOURCES;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	t->cm_id->device->ops.get_port_immutable(t->cm_id->device,
+			t->cm_id->port_num, &port_immutable);
+#else
 	t->cm_id->device->get_port_immutable(t->cm_id->device,
 			t->cm_id->port_num, &port_immutable);
+#endif
 	if (port_immutable.core_cap_flags & RDMA_CORE_PORT_IWARP) {
 		ird_ord_hdr[0] = conn_param.responder_resources;
 		ird_ord_hdr[1] = 1;
@@ -1373,6 +1378,7 @@ static int smbd_init_params(struct smbd_transport *t)
 	t->max_fragmented_recv_size = smbd_max_fragmented_recv_size;
 	t->max_recv_size = smbd_max_receive_size;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	if (device->attrs.max_send_sge < SMBDIRECT_MAX_SGE) {
 		cifsd_err(
 			"warning: device max_send_sge = %d too small\n",
@@ -1385,6 +1391,14 @@ static int smbd_init_params(struct smbd_transport *t)
 			device->attrs.max_recv_sge);
 		return -EINVAL;
 	}
+#else
+	if (device->attrs.max_sge < SMBDIRECT_MAX_SGE) {
+		cifsd_err(
+			"warning: device max_sge = %d too small\n",
+			device->attrs.max_sge);
+		return -EINVAL;
+	}
+#endif
 	return 0;
 }
 
