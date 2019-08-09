@@ -195,7 +195,7 @@ script:
  # smb2 read test
  - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.eof
  - sudo rm -rf /mnt/test1/*
-  - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.position
+ - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.position
  - sudo rm -rf /mnt/test1/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.dir
  - sudo rm -rf /mnt/test1/*
