@@ -125,7 +125,7 @@ static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 	}
 
 	if (xattr_list)
-		vfree(xattr_list);
+		cifsd_free(xattr_list);
 }
 
 /**
@@ -235,7 +235,7 @@ static ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 
 out:
 	if (xattr_list)
-		vfree(xattr_list);
+		cifsd_free(xattr_list);
 	return value_len;
 }
 
@@ -824,7 +824,7 @@ int cifsd_vfs_readdir_name(struct cifsd_work *work,
 	dir_pathlen = strlen(dir_path);
 	/* 1 for '/'*/
 	file_pathlen = dir_pathlen +  de_name_len + 1;
-	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	name = cifsd_alloc(file_pathlen + 1);
 	if (!name)
 		return -ENOMEM;
 
@@ -836,7 +836,7 @@ int cifsd_vfs_readdir_name(struct cifsd_work *work,
 	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
 	if (rc) {
 		cifsd_err("lookup failed: %s [%d]\n", name, rc);
-		kfree(name);
+		cifsd_free(name);
 		return -ENOMEM;
 	}
 
@@ -844,7 +844,7 @@ int cifsd_vfs_readdir_name(struct cifsd_work *work,
 	fill_create_time(work, &path, cifsd_kstat);
 	fill_file_attributes(work, &path, cifsd_kstat);
 	path_put(&path);
-	kfree(name);
+	cifsd_free(name);
 	return 0;
 }
 #else
@@ -1265,7 +1265,7 @@ ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list)
 	if (size <= 0)
 		return size;
 
-	vlist = vmalloc(size);
+	vlist = cifsd_alloc(size);
 	if (!vlist)
 		return -ENOMEM;
 
@@ -1307,7 +1307,7 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 	if (xattr_len < 0)
 		return xattr_len;
 
-	buf = kmalloc(xattr_len + 1, GFP_KERNEL);
+	buf = cifsd_alloc(xattr_len + 1);
 	if (!buf)
 		return -ENOMEM;
 
@@ -1410,7 +1410,7 @@ int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 	}
 out:
 	if (xattr_list)
-		vfree(xattr_list);
+		cifsd_free(xattr_list);
 
 	return err;
 }
@@ -1538,7 +1538,7 @@ int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
 		*out_start = fieinfo.fi_extents_start->fe_logical;
 		*out_length = fieinfo.fi_extents_start->fe_length;
 	}
-	kfree(fieinfo.fi_extents_start);
+	cifsd_free(fieinfo.fi_extents_start);
 	return ret;
 }
 
@@ -1904,7 +1904,7 @@ ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
 
 out:
 	if (xattr_list)
-		vfree(xattr_list);
+		cifsd_free(xattr_list);
 	return value_len;
 }
 
@@ -1917,7 +1917,7 @@ int cifsd_vfs_xattr_stream_name(char *stream_name,
 
 	stream_name_size = strlen(stream_name);
 	xattr_stream_name_size = stream_name_size + XATTR_NAME_STREAM_LEN + 1;
-	xattr_stream_name_buf = kmalloc(xattr_stream_name_size, GFP_KERNEL);
+	xattr_stream_name_buf = cifsd_alloc(xattr_stream_name_size);
 
 	memcpy(xattr_stream_name_buf,
 		XATTR_NAME_STREAM,
