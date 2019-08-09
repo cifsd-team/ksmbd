@@ -24,8 +24,7 @@ before_script:
  - sudo useradd fsgqa
  - sudo useradd 123456-fsgqa
  # Prerequisite for smbtorture testing
- - sudo apt-get install liblmdb-dev libgnutls28-dev libgpgme-dev libjansson-dev libarchive-dev libacl1-
-dev
+ - sudo apt-get install liblmdb-dev libgnutls28-dev libgpgme-dev libjansson-dev libarchive-dev libacl1-dev
 
 script:
  # Copy cifsd source to kernel
