@@ -182,14 +182,14 @@ static struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 	if (ci)
 		return ci;
 
-	ci = kmalloc(sizeof(struct cifsd_inode), GFP_KERNEL);
+	ci = cifsd_alloc(sizeof(struct cifsd_inode));
 	if (!ci)
 		return NULL;
 
 	rc = cifsd_inode_init(ci, fp);
 	if (rc) {
 		cifsd_err("inode initialized failed\n");
-		kfree(ci);
+		cifsd_free(ci);
 		return NULL;
 	}
 
@@ -198,7 +198,7 @@ static struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 	if (!tmpci) {
 		cifsd_inode_hash(ci);
 	} else {
-		kfree(ci);
+		cifsd_free(ci);
 		ci = tmpci;
 	}
 	write_unlock(&inode_hash_lock);
@@ -208,7 +208,7 @@ static struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 static void cifsd_inode_free(struct cifsd_inode *ci)
 {
 	cifsd_inode_unhash(ci);
-	kfree(ci);
+	cifsd_free(ci);
 }
 
 static void cifsd_inode_put(struct cifsd_inode *ci)
@@ -378,9 +378,9 @@ static void __cifsd_close_fd(struct cifsd_file_table *ft,
 	__cifsd_inode_close(fp);
 	if (!IS_ERR_OR_NULL(filp))
 		fput(filp);
-	kfree(fp->filename);
+	cifsd_free(fp->filename);
 	if (cifsd_stream_fd(fp))
-		kfree(fp->stream.name);
+		cifsd_free(fp->stream.name);
 	cifsd_free_file_struct(fp);
 }
 
