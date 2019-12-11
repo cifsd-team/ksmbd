@@ -6738,31 +6738,30 @@ err_out:
 
 static int fsctl_query_allocated_ranges(struct cifsd_work *work, uint64_t id,
 	struct file_allocated_range_buffer *qar_req,
-	struct file_allocated_range_buffer *qar_rsp)
+	struct file_allocated_range_buffer *qar_rsp,
+	int in_count, int *out_count)
 {
 	struct cifsd_file *fp;
-	u64 start, length, ret_start = 0, ret_length = 0;
+	u64 start, length;
 	int ret = 0;
 
+	*out_count = 0;
+	if (in_count == 0)
+		return -EINVAL;
+
 	fp = cifsd_lookup_fd_fast(work, id);
-	if (!fp) {
-		ret = -ENOENT;
-		goto err_out;
-	}
+	if (!fp)
+		return -ENOENT;
 
 	start = le64_to_cpu(qar_req->file_offset);
 	length = le64_to_cpu(qar_req->length);
 
-	ret = cifsd_vfs_fiemap(fp, start, length, &ret_start,
-			&ret_length);
-	cifsd_fd_put(work, fp);
+	ret = cifsd_vfs_fiemap(fp, start, length,
+			qar_rsp, in_count, out_count);
 	if (ret)
-		goto err_out;
+		*out_count = 0;
 
-	qar_rsp->file_offset = cpu_to_le64(ret_start);
-	qar_rsp->length = cpu_to_le64(ret_length);
-
-err_out:
+	cifsd_fd_put(work, fp);
 	return ret;
 }
 
@@ -6998,14 +6997,23 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_QUERY_ALLOCATED_RANGES:
+	{
+		unsigned int free_len = work->response_sz -
+				(get_rfc1002_len(rsp_org) + 4) -
+				sizeof(struct smb2_ioctl_rsp);
 		ret = fsctl_query_allocated_ranges(work, id,
 			(struct file_allocated_range_buffer *)&req->Buffer[0],
-			(struct file_allocated_range_buffer *)&rsp->Buffer[0]);
-		if (ret < 0)
+			(struct file_allocated_range_buffer *)&rsp->Buffer[0],
+			free_len / sizeof(struct file_allocated_range_buffer),
+			&nbytes);
+		if (ret < 0) {
+			nbytes = 0;
 			goto out;
+		}
 
-		nbytes = sizeof(struct file_allocated_range_buffer);
+		nbytes *= sizeof(struct file_allocated_range_buffer);
 		break;
+	}
 	default:
 		cifsd_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);
@@ -7031,6 +7039,8 @@ out:
 		rsp->hdr.Status = STATUS_ACCESS_DENIED;
 	else if (ret == -ENOENT)
 		rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+	else if (ret == -E2BIG)
+		rsp->hdr.Status = STATUS_BUFFER_OVERFLOW;
 	else if (ret < 0 || rsp->hdr.Status == 0)
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 	smb2_set_err_rsp(work);
