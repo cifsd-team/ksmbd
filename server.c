@@ -211,6 +211,7 @@ static void __handle_ksmbd_work(struct ksmbd_work *work,
 		}
 	}
 
+	ksmbd_work_write_lock(work);
 	ksmbd_request_lock(work);
 	do {
 		rc = __process_request(work, conn, &command);
