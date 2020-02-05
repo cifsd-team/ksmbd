@@ -86,3 +86,45 @@ bool ksmbd_queue_work(struct ksmbd_work *work)
 {
 	return queue_work(ksmbd_wq, &work->work);
 }
+
+void ksmbd_request_lock(struct ksmbd_work *work)
+{
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
+	struct ksmbd_conn *conn = work->conn;
+
+	if (hdr->ProtocolId != SMB2_PROTO_NUMBER) {
+		down_write(&conn->srv_rwsem);
+		conn->srv_wlocked = true;
+		return;
+	}
+
+	if (!hdr->NextCommand &&
+	    (hdr->Command == SMB2_READ_HE ||
+	     hdr->Command == SMB2_QUERY_DIRECTORY_HE ||
+	     hdr->Command == SMB2_QUERY_INFO_HE ||
+	     hdr->Command == SMB2_OPLOCK_BREAK_HE ||
+	     hdr->Command == SMB2_ECHO_HE))
+		down_read(&conn->srv_rwsem);
+	else {
+		down_write(&conn->srv_rwsem);
+		conn->srv_wlocked = true;
+	}
+}
+
+void ksmbd_request_unlock(struct ksmbd_work *work)
+{
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
+	struct ksmbd_conn *conn = work->conn;
+
+	if (hdr->ProtocolId != SMB2_PROTO_NUMBER) {
+		up_write(&conn->srv_rwsem);
+		conn->srv_wlocked = true;
+		return;
+	}
+
+	if (conn->srv_wlocked) {
+		conn->srv_wlocked = false;
+		up_write(&conn->srv_rwsem);
+	} else
+		up_read(&conn->srv_rwsem);
+}

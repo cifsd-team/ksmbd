@@ -113,5 +113,7 @@ int ksmbd_work_pool_init(void);
 int ksmbd_workqueue_init(void);
 void ksmbd_workqueue_destroy(void);
 bool ksmbd_queue_work(struct ksmbd_work *work);
+void ksmbd_request_lock(struct ksmbd_work *work);
+void ksmbd_request_unlock(struct ksmbd_work *work);
 
 #endif /* __KSMBD_WORK_H__ */

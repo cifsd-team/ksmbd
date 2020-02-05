@@ -48,6 +48,7 @@ static struct oplock_info *alloc_opinfo(struct ksmbd_work *work,
 	opinfo->op_state = OPLOCK_STATE_NONE;
 	opinfo->fid = id;
 	opinfo->Tid = Tid;
+	opinfo->work = work;
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	opinfo->is_smb2 = IS_SMB2(sess->conn);
 #endif
@@ -715,10 +716,12 @@ static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		 * break from levelII to none, we don't need to wait for client
 		 * response.
 		 */
+		ksmbd_request_unlock(opinfo->work);
 		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
 				opinfo->op_state == OPLOCK_STATE_NONE ||
 				opinfo->op_state == OPLOCK_CLOSING,
 				OPLOCK_WAIT_TIME);
+		ksmbd_request_lock(opinfo->work);
 
 		/* is this a timeout ? */
 		if (!rc) {
@@ -844,10 +847,12 @@ static int smb2_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		INIT_WORK(&work->work, __smb2_oplock_break_noti);
 		ksmbd_queue_work(work);
 
+		ksmbd_request_unlock(opinfo->work);
 		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
 			opinfo->op_state == OPLOCK_STATE_NONE ||
 			opinfo->op_state == OPLOCK_CLOSING,
 			OPLOCK_WAIT_TIME);
+		ksmbd_request_lock(opinfo->work);
 
 		/* is this a timeout ? */
 		if (!rc) {
@@ -866,10 +871,12 @@ static void wait_for_lease_break_ack(struct oplock_info *opinfo)
 {
 	int rc = 0;
 
+	ksmbd_request_unlock(opinfo->work);
 	rc = wait_event_interruptible_timeout(opinfo->oplock_q,
 		opinfo->op_state == OPLOCK_STATE_NONE ||
 		opinfo->op_state == OPLOCK_CLOSING,
 		OPLOCK_WAIT_TIME);
+	ksmbd_request_lock(opinfo->work);
 
 	/* is this a timeout ? */
 	if (!rc) {
@@ -990,10 +997,12 @@ static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 		if (atomic_read(&opinfo->breaking_cnt)) {
 			int ret = 0;
 
+			ksmbd_request_unlock(opinfo->work);
 			ret = wait_event_interruptible_timeout(
 				opinfo->oplock_brk,
 				atomic_read(&opinfo->breaking_cnt) == 0,
 				OPLOCK_WAIT_TIME);
+			ksmbd_request_lock(opinfo->work);
 			if (!ret)
 				atomic_set(&opinfo->breaking_cnt, 0);
 		}
