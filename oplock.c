@@ -731,6 +731,7 @@ static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		__smb1_oplock_break_noti(&work->work);
 		if (opinfo->level == OPLOCK_READ)
 			opinfo->level = OPLOCK_NONE;
+		opinfo->op_state = OPLOCK_STATE_NONE;
 	}
 	return 0;
 }
@@ -850,6 +851,7 @@ static int smb2_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		INIT_WORK(&work->work, __smb2_oplock_break_noti);
 		ksmbd_queue_work(work);
 
+		/* TODO: instead of this, wait_event_killable_timeout? */
 		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
 			opinfo->op_state == OPLOCK_STATE_NONE ||
 			opinfo->op_state == OPLOCK_CLOSING,
@@ -865,7 +867,9 @@ static int smb2_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		__smb2_oplock_break_noti(&work->work);
 		if (opinfo->level == SMB2_OPLOCK_LEVEL_II)
 			opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
+		opinfo->op_state = OPLOCK_STATE_NONE;
 	}
+
 	return ret;
 }
 
@@ -1018,7 +1022,7 @@ static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 	return 0;
 }
 
-static int oplock_break(struct oplock_info *brk_opinfo)
+static int oplock_break(struct oplock_info *brk_opinfo, int req_op_level)
 {
 	int err = 0;
 	int ack_required = 0;
@@ -1068,9 +1072,23 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 		if (lease->state & (SMB2_LEASE_WRITE_CACHING_LE |
 				SMB2_LEASE_HANDLE_CACHING_LE))
 			brk_opinfo->op_state = OPLOCK_ACK_WAIT;
-	} else if (brk_opinfo->level == SMB2_OPLOCK_LEVEL_BATCH ||
-		brk_opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE)
+	} else {
+		/* time out is possible because of the race with OPLOCK_CLOSING
+		 */
+		while  (test_and_set_bit(OPLOCK_FLAGS_PENDING_BREAK,
+					&brk_opinfo->flags)) {
+			wait_on_bit(&brk_opinfo->flags,
+				OPLOCK_FLAGS_PENDING_BREAK,
+				TASK_UNINTERRUPTIBLE);
+
+			if (brk_opinfo->op_state == OPLOCK_CLOSING)
+				return -ENOENT;
+			else if (brk_opinfo->level <= req_op_level)
+				return 0;
+		}
+
 		brk_opinfo->op_state = OPLOCK_ACK_WAIT;
+	}
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	if (brk_opinfo->is_smb2) {
@@ -1124,11 +1142,13 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 #endif
 
 	ksmbd_debug("oplock granted = %d\n", brk_opinfo->level);
-	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
-		brk_opinfo->op_state = OPLOCK_STATE_NONE;
+	if (brk_opinfo->op_state == OPLOCK_CLOSING)
 		err = -ENOENT;
-	}
 
+	if (!brk_opinfo->is_lease) {
+		clear_bit(OPLOCK_FLAGS_PENDING_BREAK, &brk_opinfo->flags);
+		wake_up_bit(&brk_opinfo->flags, OPLOCK_FLAGS_PENDING_BREAK);
+	}
 	return err;
 }
 
@@ -1366,7 +1386,7 @@ int smb_grant_oplock(struct ksmbd_work *work,
 	}
 
 	list_add(&work->interim_entry, &prev_opinfo->interim_list);
-	err = oplock_break(prev_opinfo);
+	err = oplock_break(prev_opinfo, req_op_level);
 	opinfo_put(prev_opinfo);
 	if (err == -ENOENT)
 		goto set_lev;
@@ -1432,7 +1452,7 @@ static int smb_break_all_write_oplock(struct ksmbd_work *work,
 
 	brk_opinfo->open_trunc = is_trunc;
 	list_add(&work->interim_entry, &brk_opinfo->interim_list);
-	oplock_break(brk_opinfo);
+	oplock_break(brk_opinfo, SMB2_OPLOCK_LEVEL_II);
 	opinfo_put(brk_opinfo);
 
 	return 1;
@@ -1525,7 +1545,7 @@ void smb_break_all_levII_oplock(struct ksmbd_work *work,
 				SMB2_LEASE_KEY_SIZE))
 			goto next;
 		brk_op->open_trunc = is_trunc;
-		oplock_break(brk_op);
+		oplock_break(brk_op, SMB2_OPLOCK_LEVEL_NONE);
 next:
 		opinfo_put(brk_op);
 		rcu_read_lock();

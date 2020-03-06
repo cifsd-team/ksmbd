@@ -29,6 +29,8 @@
 #define OPLOCK_ACK_WAIT		0x01
 #define OPLOCK_CLOSING		0x02
 
+#define OPLOCK_FLAGS_PENDING_BREAK	0x01
+
 #define OPLOCK_WRITE_TO_READ		0x01
 #define OPLOCK_READ_HANDLE_TO_READ	0x02
 #define OPLOCK_WRITE_TO_NONE		0x04
@@ -68,6 +70,7 @@ struct oplock_info {
 	int                     level;
 	int                     op_state;
 	uint64_t                fid;
+	unsigned long		flags;
 	atomic_t		breaking_cnt;
 	atomic_t		refcount;
 	__u16                   Tid;
