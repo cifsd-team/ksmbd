@@ -67,6 +67,7 @@ struct oplock_info {
 	struct ksmbd_file	*o_fp;
 	int                     level;
 	int                     op_state;
+	struct mutex		lock;
 	uint64_t                fid;
 	atomic_t		breaking_cnt;
 	atomic_t		refcount;

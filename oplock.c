@@ -46,6 +46,7 @@ static struct oplock_info *alloc_opinfo(struct ksmbd_work *work,
 	opinfo->conn = sess->conn;
 	opinfo->level = OPLOCK_NONE;
 	opinfo->op_state = OPLOCK_STATE_NONE;
+	mutex_init(&opinfo->lock);
 	opinfo->fid = id;
 	opinfo->Tid = Tid;
 #ifdef CONFIG_SMB_INSECURE_SERVER
@@ -185,6 +186,16 @@ static void opinfo_del(struct oplock_info *opinfo)
 	write_lock(&ci->m_lock);
 	list_del_rcu(&opinfo->op_entry);
 	write_unlock(&ci->m_lock);
+}
+
+static void opinfo_lock(struct oplock_info *opinfo)
+{
+	mutex_lock(&opinfo->lock);
+}
+
+static void opinfo_unlock(struct oplock_info *opinfo)
+{
+	mutex_unlock(&opinfo->lock);
 }
 
 /**
@@ -1018,7 +1029,7 @@ static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 	return 0;
 }
 
-static int oplock_break(struct oplock_info *brk_opinfo)
+static int oplock_break(struct oplock_info *brk_opinfo, int req_op_level)
 {
 	int err = 0;
 	int ack_required = 0;
@@ -1026,6 +1037,15 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 	/* Need to break exclusive/batch oplock, write lease or overwrite_if */
 	ksmbd_debug("request to send oplock(level : 0x%x) break notification\n",
 		brk_opinfo->level);
+
+	opinfo_lock(brk_opinfo);
+	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
+		opinfo_unlock(brk_opinfo);
+		return -ENOENT;
+	} else if (brk_opinfo->level <= req_op_level) {
+		opinfo_unlock(brk_opinfo);
+		return 0;
+	}
 
 	if (brk_opinfo->is_lease) {
 		struct lease *lease = brk_opinfo->o_lease;
@@ -1124,11 +1144,9 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 #endif
 
 	ksmbd_debug("oplock granted = %d\n", brk_opinfo->level);
-	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
-		brk_opinfo->op_state = OPLOCK_STATE_NONE;
+	if (brk_opinfo->op_state == OPLOCK_CLOSING)
 		err = -ENOENT;
-	}
-
+	opinfo_unlock(brk_opinfo);
 	return err;
 }
 
@@ -1366,7 +1384,7 @@ int smb_grant_oplock(struct ksmbd_work *work,
 	}
 
 	list_add(&work->interim_entry, &prev_opinfo->interim_list);
-	err = oplock_break(prev_opinfo);
+	err = oplock_break(prev_opinfo, SMB2_OPLOCK_LEVEL_II);
 	opinfo_put(prev_opinfo);
 	if (err == -ENOENT)
 		goto set_lev;
@@ -1432,7 +1450,7 @@ static int smb_break_all_write_oplock(struct ksmbd_work *work,
 
 	brk_opinfo->open_trunc = is_trunc;
 	list_add(&work->interim_entry, &brk_opinfo->interim_list);
-	oplock_break(brk_opinfo);
+	oplock_break(brk_opinfo, SMB2_OPLOCK_LEVEL_II);
 	opinfo_put(brk_opinfo);
 
 	return 1;
@@ -1525,7 +1543,7 @@ void smb_break_all_levII_oplock(struct ksmbd_work *work,
 				SMB2_LEASE_KEY_SIZE))
 			goto next;
 		brk_op->open_trunc = is_trunc;
-		oplock_break(brk_op);
+		oplock_break(brk_op, SMB2_OPLOCK_LEVEL_NONE);
 next:
 		opinfo_put(brk_op);
 		rcu_read_lock();
