@@ -374,6 +374,8 @@ static void set_close_state_blocked_works(struct ksmbd_file *fp)
 		list_del(&cancel_work->fp_entry);
 		cancel_work->state = KSMBD_WORK_CLOSED;
 		cancel_work->cancel_fn(cancel_work->cancel_argv);
+		kfree(cancel_work->cancel_argv);
+		cancel_work->cancel_fn = NULL;
 	}
 	spin_unlock(&fp->f_lock);
 }

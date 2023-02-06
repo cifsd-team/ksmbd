@@ -7175,6 +7175,7 @@ skip:
 						      smb2_remove_blocked_lock,
 						      argv);
 				if (rc) {
+					kfree(argv);
 					err = -ENOMEM;
 					goto out;
 				}
@@ -7197,6 +7198,8 @@ skip:
 						spin_lock(&fp->f_lock);
 						list_del(&work->fp_entry);
 						spin_unlock(&fp->f_lock);
+						kfree(argv);
+						work->cancel_fn = NULL;
 						rsp->hdr.Status =
 							STATUS_CANCELLED;
 						kfree(smb_lock);
@@ -7221,6 +7224,8 @@ skip:
 				spin_lock(&fp->f_lock);
 				list_del(&work->fp_entry);
 				spin_unlock(&fp->f_lock);
+				kfree(argv);
+				work->cancel_fn = NULL;
 				goto retry;
 			} else if (!rc) {
 				spin_lock(&work->conn->llist_lock);
