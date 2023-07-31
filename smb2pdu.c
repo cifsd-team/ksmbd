@@ -6792,7 +6792,13 @@ static ssize_t smb2_read_rdma_channel(struct ksmbd_work *work,
 				      size_t length)
 {
 	int err;
+    struct smb2_buffer_desc_v1 *desc;
 
+    /* set descriptor lenght to nbytes if less than request size */
+    if (length < req->Length) {
+        desc = (struct smb2_buffer_desc_v1 *)((char *)req + le16_to_cpu(req->ReadChannelInfoOffset));
+        desc->length = cpu_to_le32(length);
+    }
 	err = ksmbd_conn_rdma_write(work->conn, data_buf, length,
 				    (struct smb2_buffer_desc_v1 *)
 				    ((char *)req + le16_to_cpu(req->ReadChannelInfoOffset)),
